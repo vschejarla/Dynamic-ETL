@@ -8,8 +8,8 @@ import oracledb
 INCOMING_DIR = "/opt/airflow/data_extracts/incoming"
 
 DB_CONFIG = {
-    "user": "target_dw",
-    "password": "target_dw123",
+    "user": "system",
+    "password": "905966Sh@r4107",
     "dsn": "host.docker.internal/orcl"
 }
 

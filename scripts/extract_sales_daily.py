@@ -30,7 +30,7 @@ file_path = os.path.join(CURRENT_DIR, file_name)
 # Oracle connection
 connection = oracledb.connect(
     user="system",
-    password="oracle123",
+    password="905966Sh@r4107",
     dsn="host.docker.internal/orcl"
 )
 

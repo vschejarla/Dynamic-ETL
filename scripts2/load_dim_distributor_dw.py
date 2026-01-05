@@ -64,8 +64,8 @@ dist_df = df[dist_cols].drop_duplicates()
 # Oracle connection
 # -----------------------------
 conn = oracledb.connect(
-    user="target_dw",
-    password="target_dw123",
+    user="system",
+    password="905966Sh@r4107",
     dsn="host.docker.internal/orcl"
 )
 cur = conn.cursor()

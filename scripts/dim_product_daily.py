@@ -6,7 +6,7 @@ fake = Faker()
 
 conn = oracledb.connect(
     user="system",
-    password="oracle123",
+    password="905966Sh@r4107",
     dsn="host.docker.internal/orcl"
 )
 cur = conn.cursor()

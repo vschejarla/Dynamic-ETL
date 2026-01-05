@@ -4,8 +4,8 @@ from datetime import datetime, timedelta
 print("📅 DIM_DATE_DW full range load started")
 
 conn = oracledb.connect(
-    user="target_dw",
-    password="target_dw123",
+    user="system",
+    password="905966Sh@r4107",
     dsn="host.docker.internal/orcl"
 )
 cur = conn.cursor()

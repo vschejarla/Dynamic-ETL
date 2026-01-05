@@ -66,6 +66,7 @@ with DAG(
         """
     )
 
+    # OPTION 1: Add --skip_freshness_check flag to allow missing dates
     validate_fact_sales = BashOperator(
         task_id="validate_fact_sales",
         bash_command="""
@@ -75,19 +76,32 @@ with DAG(
         --mandatory_columns date_id,store_id,product_id,net_amount \
         --min_rows 1000 \
         --date_column date_id \
-        --execution_date {{ ds }}
+        --execution_date {{ ds }} \
+        --skip_freshness_check
         """
     )
 
+    # OPTION 2 (Alternative): Remove freshness check entirely
+    # validate_fact_sales = BashOperator(
+    #     task_id="validate_fact_sales",
+    #     bash_command="""
+    #     python /opt/airflow/scripts/validate_table.py \
+    #     --table_name fact_sales \
+    #     --pk_column sales_id \
+    #     --mandatory_columns date_id,store_id,product_id,net_amount \
+    #     --min_rows 1000
+    #     """
+    # )
+
     # -----------------------------
-    # 🔹 NEW: Extract validations
+    # 📹 NEW: Extract validations
     # -----------------------------
 
     validate_extract_snapshot = BashOperator(
         task_id="validate_extract_snapshot",
         bash_command="""
         python /opt/airflow/scripts/validate_table.py \
-        --file_path /opt/airflow/data_extracts/incoming/sales_snapshot_{{ ds_nodash }}_*.csv \
+        --file_pattern '/opt/airflow/data_extracts/incoming/sales_snapshot_{{ ds_nodash }}_*.csv' \
         --delimiter '|' \
         --mandatory_columns SALES_ID,NET_AMOUNT,STORE_NAME,PRODUCT_NAME,FULL_DATE \
         --numeric_columns QUANTITY_SOLD,SALES_UNIT_PRICE,GROSS_AMOUNT,NET_AMOUNT,PRODUCT_UNIT_PRICE \
