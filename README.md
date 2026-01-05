@@ -1,4 +1,3 @@
-🏬 Retail Data Warehouse ETL Pipeline (Oracle + Airflow)
 📌 Project Overview
 
 This project implements a production-style Retail Data Warehouse ETL pipeline using Oracle Database, Python, and Apache Airflow.
