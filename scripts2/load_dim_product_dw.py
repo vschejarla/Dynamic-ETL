@@ -15,107 +15,18 @@ print(f"{'='*70}\n")
 # ========================================
 INCOMING_DIR = "/opt/airflow/data_extracts/incoming"
 
-DB_CONFIG = {
-    "user": "target_dw",
-    "password": "target_dw123",
-    "dsn": "host.docker.internal/orcl"
-}
+conn = oracledb.connect(
+    user="target_dw",
+    password="target_dw123",
+    dsn="host.docker.internal/orcl"
+)
+cur = conn.cursor()
 
-try:
-    conn = oracledb.connect(**DB_CONFIG)
-    cur = conn.cursor()
-    print("✅ Connected to data warehouse (target_dw)\n")
-except Exception as e:
-    print(f"❌ Connection failed: {e}")
-    exit(1)
+print("🚀 DIM PRODUCT LOAD STARTED")
 
-# ========================================
-# CATEGORY STANDARDIZATION MAP
-# ========================================
-CATEGORY_STANDARD_MAP = {
-    # Personal Care
-    "PERSONALCARE": "PersonalCare", "PERSONAL CARE": "PersonalCare",
-    "SKINCARE": "PersonalCare", "SKIN CARE": "PersonalCare",
-    "HAIRCARE": "PersonalCare", "HAIR CARE": "PersonalCare",
-    "BODYCARE": "PersonalCare", "BODY CARE": "PersonalCare",
-    "COSMETICS": "PersonalCare", "BEAUTY": "PersonalCare",
-    
-    # Baby Care
-    "BABYCARE": "BabyCare", "BABY CARE": "BabyCare",
-    "INFANT CARE": "BabyCare", "KIDS CARE": "BabyCare",
-    
-    # Grocery
-    "GROCERY": "Grocery", "GROCERIES": "Grocery",
-    "FOOD": "Grocery", "FOODS": "Grocery",
-    "SNACKS": "Grocery", "SNACK": "Grocery",
-    "STAPLES": "Grocery", "DRY GOODS": "Grocery",
-    
-    # Beverages
-    "BEVERAGE": "Beverage", "BEVERAGES": "Beverage",
-    "DRINK": "Beverage", "DRINKS": "Beverage",
-    "SOFT DRINKS": "Beverage",
-    
-    # Dairy
-    "DAIRY": "Dairy", "MILK": "Dairy",
-    "CHEESE": "Dairy", "YOGURT": "Dairy", "BUTTER": "Dairy",
-    
-    # Home Care
-    "HOMECARE": "HomeCare", "HOME CARE": "HomeCare",
-    "CLEANING": "HomeCare", "DETERGENT": "HomeCare", "LAUNDRY": "HomeCare"
-}
-
-# ========================================
-# SUBCATEGORY STANDARDIZATION MAP
-# ========================================
-SUBCATEGORY_STANDARD_MAP = {
-    # Personal Care
-    "SHAMPOO": "Shampoo", "ANTI DANDRUFF SHAMPOO": "Shampoo",
-    "HAIR SHAMPOO": "Shampoo", "CONDITIONER": "Conditioner",
-    "HAIR OIL": "Hair Oil", "COCONUT OIL": "Hair Oil",
-    "SOAP": "Soap", "BATHING SOAP": "Soap", "BEAUTY SOAP": "Soap",
-    "FACE WASH": "Face Wash", "FACIAL CLEANSER": "Face Wash",
-    "TOOTHPASTE": "Toothpaste", "TOOTH PASTE": "Toothpaste",
-    "BODY WASH": "Body Wash", "SHOWER GEL": "Body Wash",
-    
-    # Baby Care
-    "BABY POWDER": "Baby Powder", "BABY WIPES": "Baby Wipes",
-    "BABY SOAP": "Baby Soap", "DIAPERS": "Diapers",
-    "BABY DIAPER": "Diapers", "DIAPER PANTS": "Diapers",
-    
-    # Grocery
-    "RICE": "Rice", "BASMATI RICE": "Rice",
-    "ATTA": "Wheat Flour", "WHEAT FLOUR": "Wheat Flour",
-    "OIL": "Edible Oil", "COOKING OIL": "Edible Oil",
-    "SUNFLOWER OIL": "Edible Oil", "MUSTARD OIL": "Edible Oil",
-    "PULSES": "Pulses", "DAL": "Pulses",
-    "TOOR DAL": "Pulses", "MOONG DAL": "Pulses",
-    "SPICES": "Spices", "MASALA": "Spices",
-    "TURMERIC": "Spices", "RED CHILLI": "Spices",
-    "BISCUIT": "Biscuits", "BISCUITS": "Biscuits", "COOKIES": "Biscuits",
-    "NOODLES": "Noodles", "INSTANT NOODLES": "Noodles",
-    
-    # Beverages
-    "SOFT DRINK": "Soft Drink", "COLD DRINK": "Soft Drink",
-    "COLA": "Soft Drink", "JUICE": "Juice", "FRUIT JUICE": "Juice",
-    "TEA": "Tea", "GREEN TEA": "Tea", "BLACK TEA": "Tea",
-    "COFFEE": "Coffee", "INSTANT COFFEE": "Coffee",
-    "ENERGY DRINK": "Energy Drink",
-    
-    # Dairy
-    "MILK": "Milk", "FULL CREAM MILK": "Milk", "TONED MILK": "Milk",
-    "CURD": "Curd", "YOGURT": "Curd", "DAHI": "Curd",
-    "CHEESE": "Cheese", "CHEESE SLICE": "Cheese",
-    "BUTTER": "Butter", "PANEER": "Paneer",
-    
-    # Home Care
-    "DETERGENT": "Detergent", "WASHING POWDER": "Detergent",
-    "DISHWASH": "Dishwash", "DISH WASH": "Dishwash",
-    "FLOOR CLEANER": "Floor Cleaner", "TOILET CLEANER": "Toilet Cleaner"
-}
-
-# ========================================
-# MANUFACTURER MAP (INDIAN MARKET)
-# ========================================
+# ---------------------------------------
+# Manufacturer Mapping
+# ---------------------------------------
 MANUFACTURER_MAP = {
     "PersonalCare": ["Hindustan Unilever Ltd", "Procter & Gamble", "Dabur India", "Marico Ltd", "Godrej Consumer Products", "Colgate-Palmolive"],
     "BabyCare": ["Johnson & Johnson", "Himalaya Baby Care", "Mee Mee", "Chicco"],

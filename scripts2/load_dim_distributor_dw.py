@@ -267,11 +267,22 @@ dist_df = df_valid[dist_cols].drop_duplicates(
 
 print(f"\n🚚 Unique distributors in file: {len(dist_df)}")
 
+<<<<<<< HEAD
 # ---------------------------------------------------
 # 4️⃣ CONNECT TO ORACLE
 # ---------------------------------------------------
 print("\n🔌 Connecting to Oracle...")
 conn = oracledb.connect(**DB_CONFIG)
+=======
+# -----------------------------
+# Oracle connection
+# -----------------------------
+conn = oracledb.connect(
+    user="system",
+    password="905966Sh@r4107",
+    dsn="host.docker.internal/orcl"
+)
+>>>>>>> 129265d43c32c9775d030d55e90451d72fc10756
 cur = conn.cursor()
 print("✅ Connected successfully")
 

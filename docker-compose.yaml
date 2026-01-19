@@ -14,7 +14,7 @@ x-airflow-common: &airflow-common
     - ./scripts:/opt/airflow/scripts
     - ./scripts2:/opt/airflow/scripts2
     - ./logs:/opt/airflow/logs
-    - C:/Users/PottiLikithShankarDa/Downloads/data_extracts:/opt/airflow/data_extracts
+    - C:\Users\KummariSharmila\Downloads\data_extracts:/opt/airflow/data_extracts
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     postgres:

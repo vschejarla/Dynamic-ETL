@@ -5,6 +5,7 @@ print("📅 DIM_DATE_DW AUTOMATED LOAD STARTED")
 print(f"⏰ Run time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"{'='*70}\n")
 
+<<<<<<< HEAD
 # ========================================
 # CONFIG
 # ========================================
@@ -13,6 +14,14 @@ DB_CONFIG = {
     "password": "target_dw123",
     "dsn": "host.docker.internal/orcl"
 }
+=======
+conn = oracledb.connect(
+    user="system",
+    password="905966Sh@r4107",
+    dsn="host.docker.internal/orcl"
+)
+cur = conn.cursor()
+>>>>>>> 129265d43c32c9775d030d55e90451d72fc10756
 
 # Auto-calculate range: Past 2 years up to TODAY (no future)
 PAST_BUFFER_YEARS = 2
