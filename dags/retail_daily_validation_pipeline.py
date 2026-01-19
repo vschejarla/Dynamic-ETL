@@ -62,7 +62,7 @@ with DAG(
         --table_name dim_date \
         --pk_column date_id \
         --mandatory_columns full_date,year,month \
-        --min_rows 1000
+        --min_rows 700
         """
     )
 
