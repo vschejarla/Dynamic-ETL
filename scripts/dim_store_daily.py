@@ -4,12 +4,24 @@ import random
 
 fake = Faker('en_IN')  # Indian locale
 
+<<<<<<< HEAD
 conn = oracledb.connect(
     user="system",
     password="905966Sh@r4107",
     dsn="host.docker.internal/orcl"
 )
 cur = conn.cursor()
+=======
+print("🏪 DIM_STORE_MASTER Daily Incremental Load Started")
+
+conn = oracledb.connect(
+    user="system",
+    password="oracle123",
+    dsn="host.docker.internal/orcl"
+)
+cur = conn.cursor()
+print("✅ Connected to Oracle")
+>>>>>>> etl-update
 
 # Get the next store_id
 cur.execute("SELECT NVL(MAX(store_id),0) FROM dim_store_master")
@@ -125,7 +137,10 @@ def get_indian_pincode(city):
         "Jaipur": (302001, 302040), "Lucknow": (226001, 226030)
     }
     
+<<<<<<< HEAD
     # Get range for specific cities, default for others
+=======
+>>>>>>> etl-update
     if city in pincode_ranges:
         start, end = pincode_ranges[city]
         return str(random.randint(start, end))
@@ -152,7 +167,10 @@ def generate_store_address():
     pattern = random.choice(STREET_PATTERNS)
     address_line_1 = pattern.format(num=num, landmark=landmark, road_name=road_name)
     
+<<<<<<< HEAD
     # Address Line 2 (optional additional details)
+=======
+>>>>>>> etl-update
     address_line_2_options = [
         f"{random.choice(AREA_NAMES)}",
         f"Near {landmark}",
@@ -172,10 +190,15 @@ def get_class_of_trade():
 def generate_store_data(store_id):
     """Generate complete store data with business logic"""
     
+<<<<<<< HEAD
     # Determine class of trade first (drives other attributes)
     class_of_trade = get_class_of_trade()
     
     # Determine if chain or independent
+=======
+    class_of_trade = get_class_of_trade()
+    
+>>>>>>> etl-update
     is_chain = 'N'
     chain_name = None
     store_name = None
@@ -186,7 +209,10 @@ def generate_store_data(store_id):
         store_name = chain_name
         
     elif "Supermarket" in class_of_trade:
+<<<<<<< HEAD
         # 70% chain, 30% independent
+=======
+>>>>>>> etl-update
         if random.random() < 0.7:
             is_chain = 'Y'
             chain_name = random.choice(RETAIL_CHAINS["Supermarket"])
@@ -214,6 +240,7 @@ def generate_store_data(store_id):
         pattern = random.choice(INDEPENDENT_STORE_PATTERNS)
         store_name = pattern.format(area=area, owner=owner)
     
+<<<<<<< HEAD
     # Get location
     city, state = get_random_location()
     zip_code = get_indian_pincode(city)
@@ -222,6 +249,12 @@ def generate_store_data(store_id):
     address_line_1, address_line_2 = generate_store_address()
     
     # Add city/area suffix to chain stores for uniqueness
+=======
+    city, state = get_random_location()
+    zip_code = get_indian_pincode(city)
+    address_line_1, address_line_2 = generate_store_address()
+    
+>>>>>>> etl-update
     if is_chain == 'Y':
         store_name = f"{store_name} - {city}"
     
@@ -239,7 +272,11 @@ def generate_store_data(store_id):
     )
 
 # -------------------------------
+<<<<<<< HEAD
 # GENERATE STORE DATA
+=======
+# GENERATE AND INSERT STORE DATA
+>>>>>>> etl-update
 # -------------------------------
 
 sql = """
@@ -262,10 +299,16 @@ for i in range(1, store_count + 1):
     store_data = generate_store_data(store_id)
     data.append(store_data)
     
+<<<<<<< HEAD
     # Print details
     print(f"  → Store {store_id}:")
     print(f"     Name: {store_data[1]}")
     print(f"     Location: {store_data[4]}, {store_data[5]} - {store_data[6]}")
+=======
+    print(f"  → Store {store_id}:")
+    print(f"     Name: {store_data[1]}")
+    print(f"     Location: {store_data[4]}, {store_data[6]}")
+>>>>>>> etl-update
     print(f"     Type: {store_data[7]}")
     print(f"     Chain: {'Yes' if store_data[8] == 'Y' else 'No'} {('(' + store_data[9] + ')') if store_data[9] else ''}")
     print()
@@ -286,5 +329,21 @@ print(f"\n📈 Store Statistics:")
 print(f"   Chain Stores: {chain_count}")
 print(f"   Independent Stores: {independent_count}")
 
+<<<<<<< HEAD
 cur.close()
 conn.close()
+=======
+# Class of Trade breakdown
+cot_counts = {}
+for d in data:
+    cot = d[7]
+    cot_counts[cot] = cot_counts.get(cot, 0) + 1
+
+print(f"\n📊 Class of Trade Distribution:")
+for cot, count in sorted(cot_counts.items()):
+    print(f"   {cot}: {count}")
+
+cur.close()
+conn.close()
+print("\n🎉 Daily load completed successfully!")
+>>>>>>> etl-update

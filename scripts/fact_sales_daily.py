@@ -10,7 +10,11 @@ print("🛒 FACT_SALES daily increment started")
 # -------------------------------
 conn = oracledb.connect(
     user="system",
+<<<<<<< HEAD
     password="905966Sh@r4107",
+=======
+    password="oracle123",
+>>>>>>> etl-update
     dsn="host.docker.internal/orcl"
 )
 cur = conn.cursor()
@@ -86,6 +90,7 @@ if not stores or not products or not distributors:
 # -------------------------------
 
 # Store type affects transaction volume
+<<<<<<< HEAD
 STORE_TRANSACTION_VOLUME = {
     "Modern Trade - Hypermarket": (80, 150),    # High volume
     "Modern Trade - Supermarket": (50, 100),    # Medium-high volume
@@ -93,6 +98,17 @@ STORE_TRANSACTION_VOLUME = {
     "Convenience Store": (30, 60),              # Medium volume
     "Cash & Carry - Wholesale": (20, 40)        # Medium volume (bulk orders)
 }
+=======
+# REDUCED FOR DEMO/TESTING - Use lower values
+STORE_TRANSACTION_VOLUME = {
+    "Modern Trade - Hypermarket": (8, 15),     # High volume (reduced by 10x)
+    "Modern Trade - Supermarket": (5, 10),     # Medium-high volume
+    "General Trade - Kirana": (1, 3),          # Low-medium volume
+    "Convenience Store": (3, 6),               # Medium volume
+    "Cash & Carry - Wholesale": (2, 4)         # Medium volume (bulk orders)
+}
+# This will generate ~4,000 rows/day instead of 40,000
+>>>>>>> etl-update
 
 # Category purchase patterns
 CATEGORY_PURCHASE_QTY = {
@@ -192,6 +208,7 @@ def get_product_for_store(store_class, available_products):
         return random.choice(available_products)
 
 # -------------------------------
+<<<<<<< HEAD
 # Generate Transaction Volume per Store
 # -------------------------------
 
@@ -203,6 +220,13 @@ print(f"\n📊 Sales Multipliers:")
 print(f"   Weekend Boost: {weekend_boost:.2f}x")
 print(f"   Seasonal Boost: {seasonal_boost:.2f}x")
 print(f"\n💰 Generating transactions for TODAY ({datetime.now().date()})...\n")
+=======
+# CONFIGURATION: FIXED 1000 ROWS PER DAY
+# -------------------------------
+ROWS_PER_DAY = 1000
+
+print(f"\n💰 Generating EXACTLY {ROWS_PER_DAY} transactions for TODAY ({datetime.now().date()})...\n")
+>>>>>>> etl-update
 
 # -------------------------------
 # Insert SQL
@@ -218,7 +242,11 @@ INSERT INTO fact_sales (
 """
 
 # -------------------------------
+<<<<<<< HEAD
 # Generate FACT rows
+=======
+# Generate FACT rows - EXACTLY 1000
+>>>>>>> etl-update
 # -------------------------------
 data = []
 sales_id = start_id
@@ -229,6 +257,7 @@ total_net = 0
 transaction_count_by_type = {}
 gross_by_category = {}
 
+<<<<<<< HEAD
 for store_id, store_class, is_chain in stores:
     # Determine transaction volume for this store
     base_volume = STORE_TRANSACTION_VOLUME.get(
@@ -300,6 +329,60 @@ for store_id, store_class, is_chain in stores:
         # Track by category
         gross_by_category[category] = \
             gross_by_category.get(category, 0) + float(gross)
+=======
+# Generate exactly 1000 transactions
+for txn_num in range(ROWS_PER_DAY):
+    
+    sales_id += 1
+    
+    # Randomly select store, product, distributor for each transaction
+    store_id, store_class, is_chain = random.choice(stores)
+    product_id, category, sub_category, unit_price = random.choice(products)
+    distributor_id, distributor_type = random.choice(distributors)
+        
+    # Determine quantity based on category and store type
+    qty_range = CATEGORY_PURCHASE_QTY.get(category, (1, 5))
+    base_qty = random.randint(qty_range[0], qty_range[1])
+    
+    # Apply bulk multiplier for wholesale
+    qty_multiplier = get_quantity_multiplier(store_class, "")
+    quantity = base_qty * qty_multiplier
+    
+    # Calculate amounts
+    gross = Decimal(str(quantity)) * Decimal(str(unit_price))
+    
+    # Calculate discount
+    discount_pct = calculate_discount(float(gross), store_class, is_chain)
+    discount = gross * Decimal(str(discount_pct))
+    net = gross - discount
+    
+    # Round to 2 decimal places
+    gross = round(gross, 2)
+    discount = round(discount, 2)
+    net = round(net, 2)
+    
+    data.append((
+        sales_id,
+        date_id,
+        store_id,
+        product_id,
+        distributor_id,
+        quantity,
+        float(unit_price),
+        float(gross),
+        float(discount),
+        float(net)
+    ))
+    
+    # Accumulate totals
+    total_gross += float(gross)
+    total_discount += float(discount)
+    total_net += float(net)
+    
+    # Track by category and store type
+    gross_by_category[category] = gross_by_category.get(category, 0) + float(gross)
+    transaction_count_by_type[store_class] = transaction_count_by_type.get(store_class, 0) + 1
+>>>>>>> etl-update
 
 # -------------------------------
 # Bulk Insert

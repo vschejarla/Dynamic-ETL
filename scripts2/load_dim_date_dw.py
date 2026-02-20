@@ -1,6 +1,7 @@
 import oracledb
 from datetime import datetime, timedelta
 
+<<<<<<< HEAD
 print("📅 DIM_DATE_DW AUTOMATED LOAD STARTED")
 print(f"⏰ Run time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"{'='*70}\n")
@@ -9,11 +10,24 @@ print(f"{'='*70}\n")
 # ========================================
 # CONFIG
 # ========================================
+=======
+print("📅 DIM_DATE_DW INCREMENTAL LOAD")
+print(f"⏰ Run time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"{'='*70}\n")
+
+# ========================================
+# CONFIG - CONSISTENT ACROSS ALL SCRIPTS
+# ========================================
+INCOMING_DIR = "/opt/airflow/data_extracts/incoming"
+PROCESSED_LOG = "/opt/airflow/data_extracts/processed_files.log"
+
+>>>>>>> etl-update
 DB_CONFIG = {
     "user": "target_dw",
     "password": "target_dw123",
     "dsn": "host.docker.internal/orcl"
 }
+<<<<<<< HEAD
 =======
 conn = oracledb.connect(
     user="system",
@@ -25,6 +39,10 @@ cur = conn.cursor()
 
 # Auto-calculate range: Past 2 years up to TODAY (no future)
 PAST_BUFFER_YEARS = 2
+=======
+
+PAST_BUFFER_YEARS = 2  # Load 2 years of historical data
+>>>>>>> etl-update
 
 # ========================================
 # INDIAN HOLIDAYS (2023-2030)
@@ -37,7 +55,11 @@ INDIAN_HOLIDAYS = {
     20231112: "Diwali", 20231127: "Guru Nanak Jayanti", 20231225: "Christmas",
     
     # 2024
+<<<<<<< HEAD
     20240126: "Republic Day", 20240308: "Maha Shivaratri", 20240325: "Holi",
+=======
+    20240126: "Republic Day", 20240308: "Maha Shivaratmi", 20240325: "Holi",
+>>>>>>> etl-update
     20240329: "Good Friday", 20240411: "Eid ul-Fitr", 20240417: "Ram Navami",
     20240423: "Mahavir Jayanti", 20240815: "Independence Day", 20240826: "Janmashtami",
     20241002: "Gandhi Jayanti", 20241012: "Dussehra", 20241031: "Diwali",
@@ -70,7 +92,11 @@ INDIAN_HOLIDAYS = {
     20281027: "Diwali", 20281102: "Guru Nanak Jayanti", 20281225: "Christmas",
     
     # 2029
+<<<<<<< HEAD
     20290126: "Republic Day", 20290214: "Maha Shivaratri", 20290301: "Holi",
+=======
+    20290126: "Republic Day", 20290214: "Maha Shivaratmi", 20290301: "Holi",
+>>>>>>> etl-update
     20290216: "Eid ul-Fitr", 20290330: "Good Friday", 20290815: "Independence Day",
     20290903: "Janmashtami", 20291002: "Gandhi Jayanti", 20291009: "Dussehra",
     20291117: "Diwali", 20291123: "Guru Nanak Jayanti", 20291225: "Christmas",
@@ -124,14 +150,25 @@ def is_business_day(d, date_id):
 # ========================================
 # CONNECTION
 # ========================================
+<<<<<<< HEAD
 try:
     conn = oracledb.connect(**DB_CONFIG)
     cur = conn.cursor()
     print("✅ Connected to data warehouse (target_dw)\n")
+=======
+conn = None
+cur = None
+
+try:
+    conn = oracledb.connect(**DB_CONFIG)
+    cur = conn.cursor()
+    print("✅ Connected to data warehouse\n")
+>>>>>>> etl-update
 except Exception as e:
     print(f"❌ Connection failed: {e}")
     exit(1)
 
+<<<<<<< HEAD
 # ========================================
 # AUTO-DETERMINE DATE RANGE
 # ========================================
@@ -400,3 +437,209 @@ print(f"{'='*70}")
 print(f"⏰ Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"\n💡 This script loads dates up to TODAY only - no future dates")
 print(f"💡 Run this script weekly to keep the data warehouse current")
+=======
+try:
+    # ========================================
+    # DETERMINE DATE RANGE (ONLY UP TO TODAY)
+    # ========================================
+    print("🔍 Analyzing existing date dimension...\n")
+    
+    today = datetime.now().date()
+    current_year = today.year
+    
+    # Check existing dates
+    cur.execute("SELECT COUNT(*), MIN(full_date), MAX(full_date) FROM dim_date_dw")
+    result = cur.fetchone()
+    existing_count = result[0]
+    
+    if existing_count > 0:
+        existing_start = result[1].date() if isinstance(result[1], datetime) else result[1]
+        existing_end = result[2].date() if isinstance(result[2], datetime) else result[2]
+        
+        print(f"📦 Existing dates: {existing_count:,} records")
+        print(f"   Range: {existing_start} to {existing_end}")
+    else:
+        existing_start = None
+        existing_end = None
+        print(f"📦 Date dimension is empty")
+    
+    # Define required range
+    required_start = datetime(current_year - PAST_BUFFER_YEARS, 1, 1).date()
+    required_end = today  # CRITICAL: Only load up to today
+    
+    print(f"\n📅 Today's date: {today}")
+    print(f"📅 Required range: {required_start} to {required_end}")
+    
+    # Determine what to load
+    load_ranges = []
+    
+    if existing_count == 0:
+        # Initial load
+        print(f"\n🔄 Initial load required")
+        load_ranges.append((required_start, required_end, "INITIAL LOAD"))
+    elif existing_end < required_end:
+        # Need to add recent dates
+        load_start = existing_end + timedelta(days=1)
+        print(f"\n🔄 Incremental load required")
+        print(f"   Adding dates: {load_start} to {required_end}")
+        load_ranges.append((load_start, required_end, "INCREMENTAL"))
+    else:
+        print(f"\n✅ Date dimension is current (up to {existing_end})")
+        print(f"✅ No new data to load\n")
+        load_ranges = []  # Empty - nothing to load
+    
+    # ========================================
+    # LOAD DATES (ONLY IF NEEDED)
+    # ========================================
+    if load_ranges:
+        def load_date_range(start_date, end_date, range_name):
+            """Load a range of dates"""
+            print(f"\n⚙️  Loading {range_name}...")
+            print(f"   Range: {start_date} to {end_date}")
+            
+            total_days = (end_date - start_date).days + 1
+            inserted_count = 0
+            
+            BATCH_SIZE = 1000
+            batch_data = []
+            
+            for i in range(total_days):
+                d = start_date + timedelta(days=i)
+                date_id = int(d.strftime("%Y%m%d"))
+                
+                # Calculate attributes
+                full_date = d
+                day = d.day
+                day_name = d.strftime("%A")
+                day_of_week = d.weekday() + 1
+                week_of_year = int(d.strftime("%W"))
+                month = d.month
+                month_name = d.strftime("%B")
+                quarter = (month - 1) // 3 + 1
+                year = d.year
+                
+                fiscal_quarter = get_fiscal_quarter(d)
+                fiscal_year = get_fiscal_year(d)
+                is_weekend = "Y" if d.weekday() >= 5 else "N"
+                is_month_end_flag = "Y" if is_month_end(d) else "N"
+                is_quarter_end_flag = "Y" if is_quarter_end(d) else "N"
+                is_fiscal_quarter_end_flag = "Y" if is_fiscal_quarter_end(d) else "N"
+                is_year_end_flag = "Y" if is_year_end(d) else "N"
+                is_fiscal_year_end_flag = "Y" if is_fiscal_year_end(d) else "N"
+                holiday_name = INDIAN_HOLIDAYS.get(date_id, None)
+                is_holiday = "Y" if holiday_name else "N"
+                is_business_day_flag = "Y" if is_business_day(d, date_id) else "N"
+                
+                batch_data.append((
+                    date_id, full_date, day, day_name, day_of_week,
+                    week_of_year, month, month_name, quarter, year,
+                    fiscal_quarter, fiscal_year, is_weekend, is_month_end_flag,
+                    is_quarter_end_flag, is_fiscal_quarter_end_flag, is_year_end_flag,
+                    is_fiscal_year_end_flag, is_holiday, holiday_name, is_business_day_flag
+                ))
+                
+                inserted_count += 1
+                
+                # Commit batch
+                if len(batch_data) >= BATCH_SIZE:
+                    cur.executemany("""
+                        INSERT INTO dim_date_dw (
+                            date_id, full_date, day, day_name, day_of_week,
+                            week_of_year, month, month_name, quarter, year,
+                            fiscal_quarter, fiscal_year, is_weekend, is_month_end,
+                            is_quarter_end, is_fiscal_quarter_end, is_year_end,
+                            is_fiscal_year_end, is_holiday, holiday_name, is_business_day
+                        ) VALUES (
+                            :1,:2,:3,:4,:5,:6,:7,:8,:9,:10,
+                            :11,:12,:13,:14,:15,:16,:17,:18,:19,:20,:21
+                        )
+                    """, batch_data)
+                    conn.commit()
+                    
+                    progress = (inserted_count / total_days) * 100
+                    print(f"   ✅ Progress: {inserted_count:,}/{total_days:,} ({progress:.1f}%)")
+                    batch_data = []
+            
+            # Insert remaining
+            if batch_data:
+                cur.executemany("""
+                    INSERT INTO dim_date_dw (
+                        date_id, full_date, day, day_name, day_of_week,
+                        week_of_year, month, month_name, quarter, year,
+                        fiscal_quarter, fiscal_year, is_weekend, is_month_end,
+                        is_quarter_end, is_fiscal_quarter_end, is_year_end,
+                        is_fiscal_year_end, is_holiday, holiday_name, is_business_day
+                    ) VALUES (
+                        :1,:2,:3,:4,:5,:6,:7,:8,:9,:10,
+                        :11,:12,:13,:14,:15,:16,:17,:18,:19,:20,:21
+                    )
+                """, batch_data)
+                conn.commit()
+                print(f"   ✅ Final batch: {len(batch_data)} records")
+            
+            return inserted_count
+        
+        # Execute load
+        total_inserted = 0
+        for start_date, end_date, range_name in load_ranges:
+            total_inserted += load_date_range(start_date, end_date, range_name)
+        
+        # ========================================
+        # FINAL STATISTICS (AFTER LOAD)
+        # ========================================
+        print(f"\n{'='*70}")
+        print(f"LOAD COMPLETE")
+        print(f"{'='*70}")
+        
+        print(f"\n📊 Summary:")
+        print(f"   Records inserted: {total_inserted:,}")
+    
+    # ========================================
+    # DIMENSION STATISTICS (ALWAYS SHOW)
+    # ========================================
+    cur.execute("""
+        SELECT 
+            COUNT(*) as total,
+            MIN(full_date) as min_date,
+            MAX(full_date) as max_date,
+            SUM(CASE WHEN is_business_day = 'Y' THEN 1 ELSE 0 END) as business_days
+        FROM dim_date_dw
+    """)
+    
+    stats = cur.fetchone()
+    max_date_in_table = stats[2].date() if isinstance(stats[2], datetime) else stats[2]
+    min_date_in_table = stats[1].date() if isinstance(stats[1], datetime) else stats[1]
+    
+    print(f"\n📈 Dimension Statistics:")
+    print(f"   Total records: {stats[0]:,}")
+    print(f"   Range: {min_date_in_table} to {max_date_in_table}")
+    print(f"   Business days: {stats[3]:,}")
+    
+    days_behind = (today - max_date_in_table).days
+    if days_behind == 0:
+        print(f"\n✅ Dimension is CURRENT (up to today)")
+    else:
+        print(f"\n⚠️  Dimension is {days_behind} day(s) behind")
+
+except Exception as e:
+    print(f"\n❌ Error during execution: {e}")
+    import traceback
+    traceback.print_exc()
+    exit(1)
+
+finally:
+    # Safe cleanup - always runs
+    try:
+        if cur:
+            cur.close()
+    except:
+        pass
+    
+    try:
+        if conn:
+            conn.close()
+    except:
+        pass
+
+print(f"\n🎉 Script completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+>>>>>>> etl-update

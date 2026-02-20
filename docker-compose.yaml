@@ -14,7 +14,11 @@ x-airflow-common: &airflow-common
     - ./scripts:/opt/airflow/scripts
     - ./scripts2:/opt/airflow/scripts2
     - ./logs:/opt/airflow/logs
+<<<<<<< HEAD
     - C:\Users\KummariSharmila\Downloads\data_extracts:/opt/airflow/data_extracts
+=======
+    - C:/Users/PottiLikithShankarDa/Downloads/data_extracts:/opt/airflow/data_extracts
+>>>>>>> etl-update
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     postgres:
@@ -77,4 +81,8 @@ services:
       "
 
 volumes:
+<<<<<<< HEAD
   postgres-db-volume:
+=======
+  postgres-db-volume:
+>>>>>>> etl-update
