@@ -17,17 +17,14 @@ with DAG(
     tags=["validation", "dq", "oracle"],
 ) as dag:
 
-<<<<<<< HEAD
 
     # -----------------------------
     # Existing validations (UNCHANGED)
     # -----------------------------
 
-=======
     # -----------------------------
     # Dimension validations (no date dependency)
     # -----------------------------
->>>>>>> etl-update
     validate_dim_store = BashOperator(
         task_id="validate_dim_store",
         bash_command="""
@@ -61,10 +58,7 @@ with DAG(
         """
     )
 
-<<<<<<< HEAD
-=======
     # This should NOT have date check - just validate structure
->>>>>>> etl-update
     validate_dim_date = BashOperator(
         task_id="validate_dim_date",
         bash_command="""
@@ -76,11 +70,8 @@ with DAG(
         """
     )
 
-<<<<<<< HEAD
     # OPTION 1: Add --skip_freshness_check flag to allow missing dates
-=======
     # Fact table - skip freshness check (data loaded by separate pipeline)
->>>>>>> etl-update
     validate_fact_sales = BashOperator(
         task_id="validate_fact_sales",
         bash_command="""
@@ -95,7 +86,6 @@ with DAG(
         """
     )
 
-<<<<<<< HEAD
     # OPTION 2 (Alternative): Remove freshness check entirely
     # validate_fact_sales = BashOperator(
     #     task_id="validate_fact_sales",
@@ -112,9 +102,7 @@ with DAG(
     # 📹 NEW: Extract validations
     # -----------------------------
 
-=======
     # Extract validation
->>>>>>> etl-update
     validate_extract_snapshot = BashOperator(
         task_id="validate_extract_snapshot",
         bash_command="""
@@ -128,7 +116,6 @@ with DAG(
         """
     )
 
-<<<<<<< HEAD
 
 
     # -----------------------------
@@ -142,7 +129,5 @@ with DAG(
         >> validate_fact_sales
         >>validate_extract_snapshot
     )
-=======
     # Dependency chain
     [validate_dim_store, validate_dim_product, validate_dim_distributor, validate_dim_date] >> validate_fact_sales >> validate_extract_snapshot
->>>>>>> etl-update

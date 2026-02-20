@@ -7,11 +7,7 @@ print(f"{'='*70}\n")
 
 conn = oracledb.connect(
     user="system",
-<<<<<<< HEAD
-    password="905966Sh@r4107",
-=======
     password="oracle123",
->>>>>>> etl-update
     dsn="host.docker.internal/orcl"
 )
 cur = conn.cursor()

@@ -44,8 +44,5 @@ with DAG(
         bash_command="python /opt/airflow/scripts/fact_sales_daily.py",
     )
 
-<<<<<<< HEAD
     dim_store >> dim_product >> dim_distributor >> dim_date >> fact_sales
-=======
     dim_store >> dim_product >> dim_distributor >> dim_date >> fact_sales
->>>>>>> etl-update

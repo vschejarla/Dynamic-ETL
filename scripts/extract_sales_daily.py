@@ -30,11 +30,7 @@ file_path = os.path.join(CURRENT_DIR, file_name)
 # Oracle connection
 connection = oracledb.connect(
     user="system",
-<<<<<<< HEAD
-    password="905966Sh@r4107",
-=======
     password="oracle123",
->>>>>>> etl-update
     dsn="host.docker.internal/orcl"
 )
 
