@@ -1,13 +1,8 @@
 import random
 import oracledb
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
-print("🛒 FACT_SALES daily increment started")
-
-# -------------------------------
-# Oracle Connection
-# -------------------------------
 conn = oracledb.connect(
     user="system",
     password="oracle123",
@@ -15,325 +10,253 @@ conn = oracledb.connect(
 )
 cur = conn.cursor()
 
-# -------------------------------
-# Get next SALES_ID
-# -------------------------------
-cur.execute("SELECT NVL(MAX(sales_id),0) FROM fact_sales")
+# ========================================
+# GET NEXT SALES_ID
+# ========================================
+cur.execute("SELECT NVL(MAX(sales_id), 0) FROM fact_sales")
 start_id = cur.fetchone()[0]
-print(f"🔢 Starting sales_id: {start_id + 1}")
 
-# -------------------------------
-# Get TODAY date_id from DIM_DATE
-# -------------------------------
+# ========================================
+# VALIDATE TODAY EXISTS IN DIM_DATE
+# ========================================
 today_date_id = int(datetime.now().strftime("%Y%m%d"))
-
 cur.execute(
     "SELECT date_id, day_name, is_weekend FROM dim_date WHERE date_id = :1",
     [today_date_id]
 )
 row = cur.fetchone()
 if not row:
-    print(f"\n❌ date_id {today_date_id} not found in dim_date.")
-    print(f"⚠️  This means dim_date doesn't have today's date yet.")
-    print(f"💡 Please run dim_date_daily.py first to add today's date to dim_date")
-    print(f"\nℹ️  Fact sales can only be generated for dates that exist in dim_date")
-    cur.close()
-    conn.close()
-    exit(0)  # Exit gracefully, not an error - just not ready yet
+    cur.close(); conn.close()
+    raise SystemExit(
+        f"date_id {today_date_id} not found in dim_date. "
+        "Run dim_date_daily.py first."
+    )
 
-date_id = row[0]
-day_name = row[1]
-is_weekend = row[2]
+date_id, day_name, is_weekend = row
 
-print(f"📅 Processing sales for: {date_id} ({day_name})")
-print(f"🏖️  Weekend: {'Yes' if is_weekend == 'Y' else 'No'}")
-
-# -------------------------------
-# Fetch Dimension Data with Business Attributes
-# -------------------------------
-
-# Stores with class of trade
+# ========================================
+# LOAD DIMENSION DATA
+# dim_store_master has no active_flag column — fetch all stores
+#  filter products to non-NULL unit_price only
+# ========================================
 cur.execute("""
-    SELECT store_id, store_class_of_trade, is_chain 
-    FROM dim_store_master 
-    WHERE 1=1
+    SELECT store_id, store_class_of_trade, is_chain
+    FROM   dim_store_master
 """)
 stores = cur.fetchall()
-print(f"🏪 Active stores: {len(stores)}")
 
-# Products with category and price
 cur.execute("""
-    SELECT product_id, category, sub_category, unit_price 
-    FROM dim_product
+    SELECT product_id, category, sub_category, unit_price
+    FROM   dim_product
+    WHERE  unit_price IS NOT NULL AND unit_price > 0
 """)
 products = cur.fetchall()
-print(f"📦 Available products: {len(products)}")
 
-# Active distributors only
 cur.execute("""
-    SELECT distributor_id, distributor_type 
-    FROM dim_distributor 
-    WHERE active_flag = 'Y'
+    SELECT distributor_id, distributor_type
+    FROM   dim_distributor
+    WHERE  active_flag = 'Y'
 """)
 distributors = cur.fetchall()
-print(f"🚚 Active distributors: {len(distributors)}")
 
 if not stores or not products or not distributors:
-    raise ValueError("❌ Missing dimension data. Please load dimension tables first.")
+    cur.close(); conn.close()
+    raise ValueError("Missing dimension data. Load dimension tables first.")
 
-# -------------------------------
-# RETAIL BUSINESS LOGIC
-# -------------------------------
+# ========================================
+# BUSINESS LOGIC
+# ========================================
 
-# Store type affects transaction volume
-# REDUCED FOR DEMO/TESTING - Use lower values
-STORE_TRANSACTION_VOLUME = {
-    "Modern Trade - Hypermarket": (8, 15),     # High volume (reduced by 10x)
-    "Modern Trade - Supermarket": (5, 10),     # Medium-high volume
-    "General Trade - Kirana": (1, 3),          # Low-medium volume
-    "Convenience Store": (3, 6),               # Medium volume
-    "Cash & Carry - Wholesale": (2, 4)         # Medium volume (bulk orders)
-}
-# This will generate ~4,000 rows/day instead of 40,000
-
-# Category purchase patterns
+# Quantity ranges per product category
 CATEGORY_PURCHASE_QTY = {
-    "Grocery": (1, 5),          # Staples - moderate quantity
-    "Beverage": (2, 12),        # Beverages - higher quantity
-    "Dairy": (1, 6),            # Perishables - moderate quantity
-    "Personal Care": (1, 4),    # Low quantity
-    "Baby Care": (1, 3),        # Low quantity
-    "Home Care": (1, 4)         # Low quantity
+    "Grocery":      (1, 5),
+    "Beverage":     (2, 12),
+    "Dairy":        (1, 6),
+    "Personal Care":(1, 4),
+    "Baby Care":    (1, 3),
+    "Home Care":    (1, 4),
 }
 
-# Wholesale vs retail quantity multiplier
-def get_quantity_multiplier(store_class, distributor_type):
-    """Wholesale stores buy in bulk"""
+def get_quantity_multiplier(store_class):
+    """Wholesale/Cash & Carry stores buy in bulk."""
     if "Wholesale" in store_class or "Cash & Carry" in store_class:
-        return random.randint(5, 20)  # Bulk multiplier
+        return random.randint(5, 20)
     return 1
 
-# Weekend boost (20-40% more transactions)
 def get_weekend_boost():
-    """More sales on weekends"""
-    if is_weekend == 'Y':
-        return random.uniform(1.2, 1.4)
-    return 1.0
+    """FIX 3: was defined but never applied — now used in quantity calc."""
+    return random.uniform(1.2, 1.4) if is_weekend == "Y" else 1.0
 
-# Seasonal boost (can be expanded with actual date logic)
-def get_seasonal_boost(current_month):
-    """Festival seasons see higher sales"""
-    # Diwali season (Oct-Nov), Christmas (Dec), Summer (Apr-May)
-    if current_month in [10, 11, 12]:  # Festival season
+def get_seasonal_boost():
+    """FIX 3: was defined but never applied — now used in quantity calc."""
+    m = datetime.now().month
+    if m in (10, 11, 12):       # Festival season
         return random.uniform(1.3, 1.6)
-    elif current_month in [4, 5]:      # Summer season
+    if m in (4, 5):             # Summer season
         return random.uniform(1.1, 1.3)
     return 1.0
 
-# Discount tiers based on business logic
+def get_product_for_store(store_class):
+    """
+    FIX 2: was defined but never called — now used for every transaction.
+    Match products to store type based on purchase affinity.
+    """
+    if "Kirana" in store_class:
+        preferred = ["Grocery", "Beverage", "Dairy"]
+    elif "Convenience" in store_class:
+        preferred = ["Beverage", "Dairy", "Grocery"]
+    else:
+        # Hypermarket, Supermarket, Wholesale — all categories
+        return random.choice(products)
+
+    filtered = [p for p in products if p[1] in preferred]
+    return random.choice(filtered) if filtered else random.choice(products)
+
 def calculate_discount(gross_amount, store_class, is_chain):
     """
-    Realistic discount structure:
-    - Chain stores negotiate better discounts
-    - Wholesale gets volume discounts
-    - Higher purchase amounts get better discounts
+    Tiered discount:
+      wholesale base + volume tier + chain bonus, capped at 20 %.
     """
-    
-    base_discount_pct = 0.0
-    
-    # Wholesale discount
-    if "Wholesale" in store_class or "Cash & Carry" in store_class:
-        base_discount_pct = 0.08
-    
-    # Volume-based discount tiers
-    if gross_amount >= 20000:
-        volume_discount = 0.15
-    elif gross_amount >= 10000:
-        volume_discount = 0.10
-    elif gross_amount >= 5000:
-        volume_discount = 0.07
-    elif gross_amount >= 2000:
-        volume_discount = 0.05
-    else:
-        volume_discount = 0.02
-    
-    # Chain store additional discount (better negotiation power)
-    chain_discount = 0.03 if is_chain == 'Y' else 0.0
-    
-    # Total discount (capped at 20%)
-    total_discount_pct = min(base_discount_pct + volume_discount + chain_discount, 0.20)
-    
-    return total_discount_pct
+    base = 0.08 if ("Wholesale" in store_class or "Cash & Carry" in store_class) else 0.0
 
-# Product-Store affinity (some products sell more in certain stores)
-def get_product_for_store(store_class, available_products):
-    """Match products to store types with weighted probability"""
-    
-    if "Hypermarket" in store_class or "Supermarket" in store_class:
-        # Modern trade sells all categories
-        return random.choice(available_products)
-    
-    elif "Kirana" in store_class:
-        # Kirana focuses on Grocery, Beverage, Dairy
-        preferred_categories = ["Grocery", "Beverage", "Dairy"]
-        filtered = [p for p in available_products if p[1] in preferred_categories]
-        if filtered:
-            return random.choice(filtered)
-        return random.choice(available_products)
-    
-    elif "Convenience" in store_class:
-        # Convenience stores - Beverages, Snacks, Dairy
-        preferred_categories = ["Beverage", "Dairy", "Grocery"]
-        filtered = [p for p in available_products if p[1] in preferred_categories]
-        if filtered:
-            return random.choice(filtered)
-        return random.choice(available_products)
-    
-    else:  # Wholesale
-        # Wholesale - all categories
-        return random.choice(available_products)
+    if   gross_amount >= 20000: vol = 0.15
+    elif gross_amount >= 10000: vol = 0.10
+    elif gross_amount >= 5000:  vol = 0.07
+    elif gross_amount >= 2000:  vol = 0.05
+    else:                       vol = 0.02
 
-# -------------------------------
-# CONFIGURATION: FIXED 1000 ROWS PER DAY
-# -------------------------------
-ROWS_PER_DAY = 1000
+    chain = 0.03 if is_chain == "Y" else 0.0
+    return min(base + vol + chain, 0.20)
 
-print(f"\n💰 Generating EXACTLY {ROWS_PER_DAY} transactions for TODAY ({datetime.now().date()})...\n")
+# ========================================
+# GENERATE EXACTLY 1000 TRANSACTIONS
+#  STORE_TRANSACTION_VOLUME was defined but never used —
+#        now store selection is weighted by volume tier so busier
+#        store formats appear proportionally more often.
+# ========================================
+STORE_TRANSACTION_VOLUME = {
+    "Modern Trade - Hypermarket":   (8, 15),
+    "Modern Trade - Supermarket":   (5, 10),
+    "General Trade - Kirana":       (1, 3),
+    "Convenience Store":            (3, 6),
+    "Cash & Carry - Wholesale":     (2, 4),
+}
 
-# -------------------------------
-# Insert SQL
-# -------------------------------
-sql = """
+def _store_weight(store_class):
+    """Mid-point of volume range as selection weight."""
+    for key, (lo, hi) in STORE_TRANSACTION_VOLUME.items():
+        if key in store_class:
+            return (lo + hi) / 2
+    return 2   # default mid-weight for unknown types
+
+store_weights = [_store_weight(s[1]) for s in stores]
+
+ROWS_PER_DAY   = 1000
+weekend_boost  = get_weekend_boost()
+seasonal_boost = get_seasonal_boost()
+
+data           = []
+sales_id       = start_id
+total_gross    = Decimal("0")
+total_discount = Decimal("0")
+txn_by_type    = {}
+gross_by_cat   = {}
+
+for _ in range(ROWS_PER_DAY):
+    sales_id += 1
+
+    # weighted store selection
+    store_id, store_class, is_chain = random.choices(stores, weights=store_weights, k=1)[0]
+
+    #  product chosen via affinity function
+    product_id, category, sub_category, unit_price = get_product_for_store(store_class)
+
+    distributor_id, _ = random.choice(distributors)
+
+    # Quantity with business boosts applied  (FIX 3)
+    lo, hi   = CATEGORY_PURCHASE_QTY.get(category, (1, 5))
+    base_qty = random.randint(lo, hi)
+    quantity = int(base_qty * get_quantity_multiplier(store_class) * weekend_boost * seasonal_boost)
+    quantity = max(quantity, 1)
+
+    try:
+        unit_dec = Decimal(str(unit_price))
+    except InvalidOperation:
+        continue   # skip if price is somehow non-numeric despite the DB filter
+
+    gross    = round(Decimal(str(quantity)) * unit_dec, 2)
+    disc_pct = calculate_discount(float(gross), store_class, is_chain)
+    discount = round(gross * Decimal(str(disc_pct)), 2)
+    net      = gross - discount
+
+    data.append((
+        sales_id, date_id, store_id, product_id, distributor_id,
+        quantity, float(unit_dec), float(gross), float(discount), float(net)
+    ))
+
+    total_gross    += gross
+    total_discount += discount
+    txn_by_type[store_class]  = txn_by_type.get(store_class, 0) + 1
+    gross_by_cat[category]    = gross_by_cat.get(category, Decimal("0")) + gross
+
+# ========================================
+# BULK INSERT  (single commit; rollback on any failure)
+# commit was inside the batch loop — partial commits on failure.
+#        Now one commit after all data is staged.
+# ========================================
+INSERT_SQL = """
 INSERT INTO fact_sales (
     sales_id, date_id, store_id, product_id,
     distributor_id, quantity_sold, unit_price,
     gross_amount, discount_amount, net_amount
-) VALUES (
-    :1,:2,:3,:4,:5,:6,:7,:8,:9,:10
-)
+) VALUES (:1,:2,:3,:4,:5,:6,:7,:8,:9,:10)
 """
 
-# -------------------------------
-# Generate FACT rows - EXACTLY 1000
-# -------------------------------
-data = []
-sales_id = start_id
-total_gross = 0
-total_discount = 0
-total_net = 0
-
-transaction_count_by_type = {}
-gross_by_category = {}
-
-# Generate exactly 1000 transactions
-for txn_num in range(ROWS_PER_DAY):
-    
-    sales_id += 1
-    
-    # Randomly select store, product, distributor for each transaction
-    store_id, store_class, is_chain = random.choice(stores)
-    product_id, category, sub_category, unit_price = random.choice(products)
-    distributor_id, distributor_type = random.choice(distributors)
-        
-    # Determine quantity based on category and store type
-    qty_range = CATEGORY_PURCHASE_QTY.get(category, (1, 5))
-    base_qty = random.randint(qty_range[0], qty_range[1])
-    
-    # Apply bulk multiplier for wholesale
-    qty_multiplier = get_quantity_multiplier(store_class, "")
-    quantity = base_qty * qty_multiplier
-    
-    # Calculate amounts
-    gross = Decimal(str(quantity)) * Decimal(str(unit_price))
-    
-    # Calculate discount
-    discount_pct = calculate_discount(float(gross), store_class, is_chain)
-    discount = gross * Decimal(str(discount_pct))
-    net = gross - discount
-    
-    # Round to 2 decimal places
-    gross = round(gross, 2)
-    discount = round(discount, 2)
-    net = round(net, 2)
-    
-    data.append((
-        sales_id,
-        date_id,
-        store_id,
-        product_id,
-        distributor_id,
-        quantity,
-        float(unit_price),
-        float(gross),
-        float(discount),
-        float(net)
-    ))
-    
-    # Accumulate totals
-    total_gross += float(gross)
-    total_discount += float(discount)
-    total_net += float(net)
-    
-    # Track by category and store type
-    gross_by_category[category] = gross_by_category.get(category, 0) + float(gross)
-    transaction_count_by_type[store_class] = transaction_count_by_type.get(store_class, 0) + 1
-
-# -------------------------------
-# Bulk Insert
-# -------------------------------
-print(f"📝 Inserting {len(data)} transactions for {datetime.now().date()}...")
-
-# Insert in batches of 1000 for performance
-batch_size = 1000
-for i in range(0, len(data), batch_size):
-    batch = data[i:i + batch_size]
-    cur.executemany(sql, batch)
+BATCH_SIZE = 1000
+try:
+    for i in range(0, len(data), BATCH_SIZE):
+        cur.executemany(INSERT_SQL, data[i:i + BATCH_SIZE])
     conn.commit()
-    print(f"   ✅ Inserted batch {i//batch_size + 1}: {len(batch)} rows")
+except Exception as e:
+    conn.rollback()
+    cur.close(); conn.close()
+    raise RuntimeError(f"fact_sales insert failed: {e}") from e
 
-print(f"\n{'='*70}")
-print(f"✅ FACT_SALES daily increment completed for date_id: {date_id}")
-print(f"{'='*70}")
-
-print(f"\n📊 Transaction Summary:")
-print(f"   Date: {datetime.now().date()} (TODAY)")
-print(f"   Total Transactions: {len(data):,}")
-print(f"   Sales ID Range: {start_id + 1:,} to {sales_id:,}")
-print(f"   Total Gross: ₹{total_gross:,.2f}")
-print(f"   Total Discount: ₹{total_discount:,.2f} ({(total_discount/total_gross*100):.2f}%)")
-print(f"   Total Net: ₹{total_net:,.2f}")
-
-print(f"\n🏪 Transactions by Store Type:")
-for store_type, count in sorted(transaction_count_by_type.items(), 
-                                 key=lambda x: x[1], reverse=True):
-    print(f"   {store_type}: {count:,} transactions")
-
-print(f"\n📦 Gross Sales by Category:")
-for category, amount in sorted(gross_by_category.items(), 
-                                key=lambda x: x[1], reverse=True):
-    pct = (amount / total_gross * 100)
-    print(f"   {category}: ₹{amount:,.2f} ({pct:.1f}%)")
-
-# Final statistics from database
+# ========================================
+# POST-INSERT STATS FROM DB
+# ========================================
 cur.execute("""
-    SELECT 
-        COUNT(*) as total_records,
-        SUM(net_amount) as total_sales,
-        AVG(net_amount) as avg_ticket_size,
-        MAX(net_amount) as max_transaction
-    FROM fact_sales
-    WHERE date_id = :1
+    SELECT COUNT(*), SUM(net_amount), AVG(net_amount), MAX(net_amount)
+    FROM   fact_sales
+    WHERE  date_id = :1
 """, [date_id])
-
-stats = cur.fetchone()
-print(f"\n📈 Today's Sales Statistics:")
-print(f"   Total Records: {stats[0]:,}")
-print(f"   Total Sales: ₹{stats[1]:,.2f}")
-print(f"   Average Ticket Size: ₹{stats[2]:,.2f}")
-print(f"   Largest Transaction: ₹{stats[3]:,.2f}")
+db_stats = cur.fetchone()
 
 cur.close()
 conn.close()
 
-print(f"\n🎉 Sales data generation completed successfully!")
-print(f"💡 This script generates sales only for TODAY - no future dates")
+# ========================================
+# SUMMARY 
+# ========================================
+# guard against zero total_gross to avoid ZeroDivisionError
+disc_pct_str = (
+    f"{float(total_discount) / float(total_gross) * 100:.2f}%"
+    if total_gross > 0 else "N/A"
+)
+
+print(
+    f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+    f"date_id: {date_id} ({day_name}) | "
+    f"Inserted: {len(data):,} | "
+    f"IDs: {start_id + 1}–{sales_id} | "
+    f"Gross: ₹{float(total_gross):,.2f} | "
+    f"Discount: {disc_pct_str} | "
+    f"Net: ₹{float(total_gross - total_discount):,.2f}"
+)
+print(
+    "  By category: " +
+    " | ".join(
+        f"{cat}: ₹{float(amt):,.0f}"
+        for cat, amt in sorted(gross_by_cat.items(), key=lambda x: x[1], reverse=True)
+    )
+)
