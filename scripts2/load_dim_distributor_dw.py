@@ -1,40 +1,36 @@
+import sys
 import os
 import pandas as pd
 import oracledb
 from datetime import datetime
 
-print("🚚 DISTRIBUTOR DIMENSION INCREMENTAL LOAD")
-print(f"⏰ Run time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-
 # ========================================
-# CONFIG - CONSISTENT ACROSS ALL SCRIPTS
+# CONFIG
 # ========================================
-INCOMING_DIR = "/opt/airflow/data_extracts/incoming"
-PROCESSED_LOG = "/opt/airflow/data_extracts/processed_distributors.log"
+INCOMING_DIR   = "/opt/airflow/data_extracts/incoming"
+# extract_to_csv.py writes distributor_YYYYMMDD.csv
+FILE_PREFIX    = "distributor_"
+PROCESSED_LOG  = "/opt/airflow/data_extracts/processed_distributors.log"
 
 DB_CONFIG = {
-    "user": "target_dw",
+    "user":     "target_dw",
     "password": "target_dw123",
-    "dsn": "host.docker.internal/orcl"
+    "dsn":      "host.docker.internal/orcl"
 }
 
 # ========================================
-# FILE TRACKING - NO FILE MOVEMENT
+# FILE TRACKING
 # ========================================
 def is_file_processed(filename):
-    """Check if file has been processed before"""
     if not os.path.exists(PROCESSED_LOG):
         return False
     with open(PROCESSED_LOG, 'r') as f:
-        processed = f.read().splitlines()
-    return any(line.startswith(filename) for line in processed)
+        return any(line.startswith(filename) for line in f.read().splitlines())
 
 def mark_file_processed(filename):
-    """Mark file as processed"""
     os.makedirs(os.path.dirname(PROCESSED_LOG), exist_ok=True)
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     with open(PROCESSED_LOG, 'a') as f:
-        f.write(f"{filename}|{timestamp}\n")
+        f.write(f"{filename}|{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
 
 # ========================================
 # DATA CLEANING
@@ -57,14 +53,12 @@ def clean_state(val):
 def clean_distributor_type(val):
     if pd.isna(val) or val is None or str(val).strip() == '':
         return "Local"
-    
     val_upper = str(val).strip().upper()
     type_map = {
         "NATIONAL": "National", "NAT": "National", "PAN INDIA": "National",
         "REGIONAL": "Regional", "REG": "Regional", "MULTI STATE": "Regional",
-        "LOCAL": "Local", "CITY": "Local", "DISTRICT": "Local"
+        "LOCAL": "Local",       "CITY": "Local",    "DISTRICT": "Local",
     }
-    
     for key, value in type_map.items():
         if key in val_upper:
             return value
@@ -73,261 +67,223 @@ def clean_distributor_type(val):
 def clean_active_flag(val):
     if pd.isna(val) or val is None or str(val).strip() == '':
         return 'Y'
-    val_upper = str(val).strip().upper()
-    return 'Y' if val_upper in ['Y', 'YES', '1', 'TRUE', 'ACTIVE', 'A'] else 'N'
+    return 'Y' if str(val).strip().upper() in ('Y','YES','1','TRUE','ACTIVE','A') else 'N'
 
 def clean_onboarding_date(val):
     if pd.isna(val) or val is None or val == '':
         return None
     try:
-        parsed_date = pd.to_datetime(val, errors='coerce')
-        if pd.isna(parsed_date):
+        parsed = pd.to_datetime(val, errors='coerce')
+        if pd.isna(parsed):
             return None
-        min_date = datetime(1990, 1, 1)
-        max_date = datetime.now()
-        if parsed_date < min_date or parsed_date > max_date:
+        if parsed < datetime(1990, 1, 1) or parsed > datetime.now():
             return None
-        return parsed_date
-    except:
+        return parsed
+    except Exception:
         return None
 
 # ========================================
-# CHECK INCOMING DIRECTORY
+# GUARD: incoming directory must exist
 # ========================================
 if not os.path.exists(INCOMING_DIR):
-    print(f"ℹ️  Incoming directory does not exist: {INCOMING_DIR}")
-    print("✅ This is normal if initial load hasn't run yet")
-    print("✅ Exiting gracefully - no data to process\n")
-    exit(0)
+    raise RuntimeError(f"Incoming directory not found: {INCOMING_DIR}")
 
 # ========================================
-# FIND UNPROCESSED FILES
+# FIND NEXT UNPROCESSED FILE
 # ========================================
-all_files = sorted([f for f in os.listdir(INCOMING_DIR) if f.startswith("sales_") and f.endswith(".csv")], reverse=True)
+all_files = sorted(
+    [f for f in os.listdir(INCOMING_DIR)
+     if f.startswith(FILE_PREFIX) and f.endswith(".csv")],
+    reverse=True
+)
 
 if not all_files:
-    print(f"ℹ️  No sales CSV files found in: {INCOMING_DIR}")
-    print("✅ Exiting gracefully - no data to process\n")
-    exit(0)
+    print(f"No '{FILE_PREFIX}*.csv' files found in {INCOMING_DIR}")
+    sys.exit(0)
 
-# Find first unprocessed file
-source_file = None
-for f in all_files:
-    if not is_file_processed(f):
-        source_file = f
-        break
-
+source_file = next((f for f in all_files if not is_file_processed(f)), None)
 if source_file is None:
-    print(f"ℹ️  All {len(all_files)} sales file(s) already processed for distributors")
-    print("✅ Exiting gracefully - no new data to process\n")
-    exit(0)
+    print(f"All {len(all_files)} file(s) already processed — nothing to do")
+    sys.exit(0)
 
 file_path = os.path.join(INCOMING_DIR, source_file)
-print(f"📄 Processing file: {source_file}")
-print(f"📁 Location: {file_path}\n")
 
 # ========================================
-# READ AND CLEAN DATA
+# READ & VALIDATE FILE
 # ========================================
 try:
-    df = pd.read_csv(file_path, delimiter="|", dtype=str, na_values=['', 'NULL', 'null', 'NA'])
-    print(f"📊 Initial rows: {len(df):,}")
+    df = pd.read_csv(
+        file_path, delimiter="|", dtype=str,
+        na_values=['', 'NULL', 'null', 'NA']
+    )
 except Exception as e:
-    print(f"❌ Error reading file: {e}")
-    exit(1)
+    raise RuntimeError(f"Failed to read '{source_file}': {e}") from e
 
 if len(df) == 0:
-    print("⚠️  Empty file - marking as processed")
     mark_file_processed(source_file)
-    print("✅ Exiting gracefully\n")
-    exit(0)
+    print(f"Empty file '{source_file}' — marked as processed")
+    sys.exit(0)
 
 df.columns = df.columns.str.strip().str.upper()
 
-required_cols = [
+REQUIRED_COLS = [
     "DISTRIBUTOR_NAME", "DISTRIBUTOR_CITY", "DISTRIBUTOR_STATE",
-    "DISTRIBUTOR_TYPE", "ONBOARDING_DATE", "ACTIVE_FLAG"
+    "DISTRIBUTOR_TYPE", "ONBOARDING_DATE", "ACTIVE_FLAG",
 ]
-
-missing_cols = [col for col in required_cols if col not in df.columns]
+missing_cols = [c for c in REQUIRED_COLS if c not in df.columns]
 if missing_cols:
-    print(f"❌ Missing columns: {missing_cols}")
-    print(f"⚠️  Marking file as processed to prevent retry loop")
-    mark_file_processed(source_file)
-    exit(1)
+    mark_file_processed(source_file)   # prevent retry loop
+    raise RuntimeError(f"Missing columns {missing_cols} in '{source_file}'")
 
-# Clean data
-df["DISTRIBUTOR_NAME_CLEAN"] = df["DISTRIBUTOR_NAME"].apply(clean_distributor_name)
-df["DISTRIBUTOR_CITY_CLEAN"] = df["DISTRIBUTOR_CITY"].apply(clean_city)
+# ========================================
+# CLEAN & DEDUPLICATE
+# ========================================
+df["DISTRIBUTOR_NAME_CLEAN"]  = df["DISTRIBUTOR_NAME"].apply(clean_distributor_name)
+df["DISTRIBUTOR_CITY_CLEAN"]  = df["DISTRIBUTOR_CITY"].apply(clean_city)
 df["DISTRIBUTOR_STATE_CLEAN"] = df["DISTRIBUTOR_STATE"].apply(clean_state)
-df["DISTRIBUTOR_TYPE_CLEAN"] = df["DISTRIBUTOR_TYPE"].apply(clean_distributor_type)
-df["ACTIVE_FLAG_CLEAN"] = df["ACTIVE_FLAG"].apply(clean_active_flag)
-df["ONBOARDING_DATE_CLEAN"] = df["ONBOARDING_DATE"].apply(clean_onboarding_date)
+df["DISTRIBUTOR_TYPE_CLEAN"]  = df["DISTRIBUTOR_TYPE"].apply(clean_distributor_type)
+df["ACTIVE_FLAG_CLEAN"]       = df["ACTIVE_FLAG"].apply(clean_active_flag)
+df["ONBOARDING_DATE_CLEAN"]   = df["ONBOARDING_DATE"].apply(clean_onboarding_date)
 
-# Filter valid rows
 df_valid = df[
-    (df["DISTRIBUTOR_NAME_CLEAN"].notna()) &
+    df["DISTRIBUTOR_NAME_CLEAN"].notna() &
     (df["DISTRIBUTOR_NAME_CLEAN"] != "UNKNOWN DISTRIBUTOR") &
-    (df["DISTRIBUTOR_CITY_CLEAN"].notna()) &
-    (df["DISTRIBUTOR_STATE_CLEAN"].notna())
+    df["DISTRIBUTOR_CITY_CLEAN"].notna() &
+    df["DISTRIBUTOR_STATE_CLEAN"].notna()
 ].copy()
 
-print(f"✅ Valid rows: {len(df_valid):,}")
-if len(df) > len(df_valid):
-    print(f"⚠️  Invalid rows: {len(df) - len(df_valid):,}")
-
-# Deduplicate
-dist_df = df_valid[[
-    "DISTRIBUTOR_NAME_CLEAN", "DISTRIBUTOR_CITY_CLEAN", "DISTRIBUTOR_STATE_CLEAN",
-    "DISTRIBUTOR_TYPE_CLEAN", "ONBOARDING_DATE_CLEAN", "ACTIVE_FLAG_CLEAN"
-]].drop_duplicates(subset=["DISTRIBUTOR_NAME_CLEAN", "DISTRIBUTOR_CITY_CLEAN", "DISTRIBUTOR_STATE_CLEAN"])
-
-print(f"🚚 Unique distributors: {len(dist_df)}\n")
+dist_df = df_valid.drop_duplicates(
+    subset=["DISTRIBUTOR_NAME_CLEAN","DISTRIBUTOR_CITY_CLEAN","DISTRIBUTOR_STATE_CLEAN"]
+)[[
+    "DISTRIBUTOR_NAME_CLEAN","DISTRIBUTOR_CITY_CLEAN","DISTRIBUTOR_STATE_CLEAN",
+    "DISTRIBUTOR_TYPE_CLEAN","ONBOARDING_DATE_CLEAN","ACTIVE_FLAG_CLEAN",
+]]
 
 if len(dist_df) == 0:
-    print("⚠️  No valid distributor records after cleaning")
     mark_file_processed(source_file)
-    print("✅ File marked as processed - exiting gracefully\n")
-    exit(0)
+    print("No valid distributor records after cleaning — file marked processed")
+    sys.exit(0)
 
 # ========================================
-# CONNECT TO DATABASE
+# DATABASE WORK
 # ========================================
-print("🔌 Connecting to database...")
-conn = None
-cur = None
+conn = oracledb.connect(**DB_CONFIG)
+cur  = conn.cursor()
 
 try:
-    conn = oracledb.connect(**DB_CONFIG)
-    cur = conn.cursor()
-    print("✅ Connected\n")
-    
-    # ========================================
-    # CREATE STAGING TABLE
-    # ========================================
-    print("🏗️  Creating staging table...")
-    
+    # ── Staging table ────────────────────────────────────────────────────────
     try:
         cur.execute("DROP TABLE distributor_staging")
-    except:
+    except Exception:
         pass
-    
+
     cur.execute("""
         CREATE TABLE distributor_staging (
-            dist_key NUMBER,
-            dist_name VARCHAR2(50),
-            dist_type VARCHAR2(30),
-            dist_city VARCHAR2(30),
-            dist_state VARCHAR2(30),
+            dist_key             NUMBER,
+            dist_name            VARCHAR2(50),
+            dist_type            VARCHAR2(30),
+            dist_city            VARCHAR2(30),
+            dist_state           VARCHAR2(30),
             dist_onboarding_date DATE,
-            dist_active_flag CHAR(1),
-            operation VARCHAR2(10)
+            dist_active_flag     CHAR(1),
+            operation            VARCHAR2(10)
         )
     """)
     conn.commit()
-    print("✅ Staging table created\n")
-    
-    # ========================================
-    # LOAD EXISTING DISTRIBUTORS
-    # ========================================
+
+    # ── Load existing distributor cache ──────────────────────────────────────
     cur.execute("""
         SELECT dist_key, dist_name, dist_city, dist_state,
                dist_type, dist_onboarding_date, dist_active_flag
         FROM dim_distributor_dw
     """)
-    
     dist_cache = {}
     for r in cur.fetchall():
-        bk = (r[1], r[2], r[3])  # name, city, state
+        bk = (r[1], r[2], r[3])   # name, city, state
         dist_cache[bk] = {
-            'dist_key': r[0], 'dist_type': r[4],
-            'dist_onboarding_date': r[5], 'dist_active_flag': r[6]
+            'dist_key':             r[0],
+            'dist_type':            r[4],
+            'dist_onboarding_date': r[5],
+            'dist_active_flag':     r[6],
         }
-    
-    print(f"📦 Existing distributors: {len(dist_cache)}")
-    
-    # Get next key
-    cur.execute("SELECT NVL(MAX(dist_key),0) FROM dim_distributor_dw")
+
+    cur.execute("SELECT NVL(MAX(dist_key), 0) FROM dim_distributor_dw")
     next_key = cur.fetchone()[0] + 1
-    
-    # ========================================
-    # CLASSIFY RECORDS
-    # ========================================
+
+    # ── Classify INSERT vs UPDATE ─────────────────────────────────────────────
     insert_records = []
     update_records = []
-    
-    for _, r in dist_df.iterrows():
-        bk = (r["DISTRIBUTOR_NAME_CLEAN"], r["DISTRIBUTOR_CITY_CLEAN"], r["DISTRIBUTOR_STATE_CLEAN"])
-        
+
+    for _, row in dist_df.iterrows():
+        bk = (
+            row["DISTRIBUTOR_NAME_CLEAN"],
+            row["DISTRIBUTOR_CITY_CLEAN"],
+            row["DISTRIBUTOR_STATE_CLEAN"],
+        )
         if bk not in dist_cache:
-            insert_records.append({'dist_key': next_key, 'bk': bk, 'data': r})
+            insert_records.append({'dist_key': next_key, 'bk': bk, 'data': row})
             next_key += 1
         else:
             existing = dist_cache[bk]
-            
-            # Compare dates safely
-            existing_date = existing['dist_onboarding_date']
-            new_date = r["ONBOARDING_DATE_CLEAN"]
-            
+            ex_date  = existing['dist_onboarding_date']
+            new_date = row["ONBOARDING_DATE_CLEAN"]
+
             date_changed = False
-            if existing_date is None and new_date is not None:
+            if ex_date is None and new_date is not None:
                 date_changed = True
-            elif existing_date is not None and new_date is not None:
-                if isinstance(existing_date, datetime):
-                    existing_date = existing_date.date()
-                if isinstance(new_date, pd.Timestamp):
-                    new_date = new_date.date()
-                date_changed = existing_date != new_date
-            
+            elif ex_date is not None and new_date is not None:
+                ex_d  = ex_date.date()  if isinstance(ex_date,  datetime) else ex_date
+                new_d = new_date.date() if isinstance(new_date, pd.Timestamp) else new_date
+                date_changed = ex_d != new_d
+
             if (
-                r["DISTRIBUTOR_TYPE_CLEAN"] != existing['dist_type'] or
-                r["ACTIVE_FLAG_CLEAN"] != existing['dist_active_flag'] or
+                row["DISTRIBUTOR_TYPE_CLEAN"]  != existing['dist_type'] or
+                row["ACTIVE_FLAG_CLEAN"]        != existing['dist_active_flag'] or
                 date_changed
             ):
                 update_records.append({
-                    'dist_key': existing['dist_key'], 'bk': bk, 'data': r
+                    'dist_key': existing['dist_key'], 'bk': bk, 'data': row
                 })
-    
-    print(f"   ➕ New: {len(insert_records)}")
-    print(f"   🔄 Updates: {len(update_records)}\n")
-    
-    # ========================================
-    # LOAD STAGING AND MERGE
-    # ========================================
+
+    # ── Load staging ─────────────────────────────────────────────────────────
     staging_data = []
-    
-    for record in insert_records + update_records:
-        r = record['data']
+    for rec in insert_records + update_records:
+        row = rec['data']
         staging_data.append((
-            record['dist_key'],
-            r["DISTRIBUTOR_NAME_CLEAN"][:50],
-            r["DISTRIBUTOR_TYPE_CLEAN"][:30],
-            r["DISTRIBUTOR_CITY_CLEAN"][:30],
-            r["DISTRIBUTOR_STATE_CLEAN"][:30],
-            r["ONBOARDING_DATE_CLEAN"],
-            r["ACTIVE_FLAG_CLEAN"],
-            'INSERT' if record in insert_records else 'UPDATE'
+            rec['dist_key'],
+            row["DISTRIBUTOR_NAME_CLEAN"][:50],
+            row["DISTRIBUTOR_TYPE_CLEAN"][:30],
+            row["DISTRIBUTOR_CITY_CLEAN"][:30],
+            row["DISTRIBUTOR_STATE_CLEAN"][:30],
+            row["ONBOARDING_DATE_CLEAN"],
+            row["ACTIVE_FLAG_CLEAN"],
+            'INSERT' if rec in insert_records else 'UPDATE',
         ))
-    
-    if staging_data:
-        print(f"💾 Loading {len(staging_data)} records...")
-        
+
+    if not staging_data:
+        cur.execute("DROP TABLE distributor_staging")
+        conn.commit()
+        mark_file_processed(source_file)
+        # Stats query still runs below via the finally-guarded path
+        rows_merged = 0
+    else:
         cur.executemany("""
             INSERT INTO distributor_staging (
                 dist_key, dist_name, dist_type, dist_city, dist_state,
                 dist_onboarding_date, dist_active_flag, operation
             ) VALUES (:1,:2,:3,:4,:5,:6,:7,:8)
         """, staging_data)
-        
+
+        # ── MERGE ────────────────────────────────────────────────────────────
         cur.execute("""
             MERGE INTO dim_distributor_dw tgt
             USING distributor_staging stg
             ON (tgt.dist_key = stg.dist_key)
             WHEN MATCHED THEN
                 UPDATE SET
-                    tgt.dist_type = stg.dist_type,
+                    tgt.dist_type            = stg.dist_type,
                     tgt.dist_onboarding_date = stg.dist_onboarding_date,
-                    tgt.dist_active_flag = stg.dist_active_flag
+                    tgt.dist_active_flag     = stg.dist_active_flag
             WHEN NOT MATCHED THEN
                 INSERT (
                     dist_key, dist_name, dist_type, dist_city, dist_state,
@@ -338,63 +294,43 @@ try:
                     stg.dist_onboarding_date, stg.dist_active_flag
                 )
         """)
-        
+        rows_merged = cur.rowcount
         conn.commit()
-        print(f"✅ Merged {cur.rowcount} records\n")
-    else:
-        print("ℹ️  No changes detected - all data already current\n")
-    
-    # Cleanup
-    print("🧹 Cleaning up...")
-    cur.execute("DROP TABLE distributor_staging")
-    conn.commit()
-    
-    # Mark as processed
-    mark_file_processed(source_file)
-    print(f"✅ File marked as processed\n")
-    
-    # ========================================
-    # STATISTICS
-    # ========================================
-    print("="*60)
-    print("FINAL STATISTICS")
-    print("="*60)
-    
-    cur.execute("""
-        SELECT 
-            COUNT(*) as total,
-            SUM(CASE WHEN dist_active_flag = 'Y' THEN 1 ELSE 0 END) as active,
-            SUM(CASE WHEN dist_active_flag = 'N' THEN 1 ELSE 0 END) as inactive
-        FROM dim_distributor_dw
-    """)
-    stats = cur.fetchone()
-    print(f"📊 Total distributors: {stats[0]}")
-    print(f"   Active: {stats[1]}, Inactive: {stats[2]}")
-    
-    cur.execute("""
-        SELECT dist_type, COUNT(*) as cnt
-        FROM dim_distributor_dw
-        GROUP BY dist_type
-        ORDER BY cnt DESC
-    """)
-    print(f"\n📊 By Type:")
-    for row in cur.fetchall():
-        print(f"   {row[0]}: {row[1]}")
 
-except Exception as e:
-    print(f"❌ Error: {e}")
+        try:
+            cur.execute("DROP TABLE distributor_staging")
+            conn.commit()
+        except Exception:
+            pass
+
+        mark_file_processed(source_file)
+
+    # ── Summary stats ─────────────────────────────────────────────────────────
+    cur.execute("""
+        SELECT COUNT(*),
+               SUM(CASE WHEN dist_active_flag = 'Y' THEN 1 ELSE 0 END),
+               SUM(CASE WHEN dist_active_flag = 'N' THEN 1 ELSE 0 END)
+        FROM dim_distributor_dw
+    """)
+    s = cur.fetchone()
+
+    print(
+        f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+        f"file: {source_file} | "
+        f"insert: {len(insert_records)} | update: {len(update_records)} | "
+        f"merged: {rows_merged} | "
+        f"DB total: {s[0]} active: {s[1]} inactive: {s[2]}"
+    )
+
+except Exception:
+    conn.rollback()
     raise
-
 finally:
-    if cur:
-        try:
-            cur.close()
-        except:
-            pass
-    if conn:
-        try:
-            conn.close()
-        except:
-            pass
-
-print(f"\n🎉 Load completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    try:
+        cur.close()
+    except Exception:
+        pass
+    try:
+        conn.close()
+    except Exception:
+        pass

@@ -14,7 +14,7 @@ timestamp = datetime.now().strftime("%Y%m%d_%H%M")
 file_name = f"sales_snapshot_{timestamp}.csv"
 file_path = os.path.join(BASE_PATH, file_name)
 
-print(f"📄 Writing file: {file_path}")
+print(f" Writing file: {file_path}")
 
 # -----------------------------
 # Oracle Connection
@@ -57,7 +57,7 @@ SELECT
     dt.is_fiscal_year_end, 
     dt.is_holiday,
     dt.holiday_name,
-    dt.is_business_day
+    dt.is_business_day,
 
 
     ds.store_name,
@@ -105,7 +105,7 @@ with open(file_path, "w", newline="", encoding="utf-8") as f:
     writer.writerow([col[0] for col in cursor.description])
     writer.writerows(cursor.fetchall())
 
-print("✅ CSV file generated successfully in incoming folder")
+print(" CSV file generated successfully in incoming folder")
 
 cursor.close()
 connection.close() 

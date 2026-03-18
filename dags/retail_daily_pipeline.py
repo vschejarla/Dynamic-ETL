@@ -45,4 +45,3 @@ with DAG(
     )
 
     dim_store >> dim_product >> dim_distributor >> dim_date >> fact_sales
-    dim_store >> dim_product >> dim_distributor >> dim_date >> fact_sales

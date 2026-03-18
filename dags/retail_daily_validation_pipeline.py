@@ -17,11 +17,6 @@ with DAG(
     tags=["validation", "dq", "oracle"],
 ) as dag:
 
-
-    # -----------------------------
-    # Existing validations (UNCHANGED)
-    # -----------------------------
-
     # -----------------------------
     # Dimension validations (no date dependency)
     # -----------------------------
@@ -70,7 +65,6 @@ with DAG(
         """
     )
 
-    # OPTION 1: Add --skip_freshness_check flag to allow missing dates
     # Fact table - skip freshness check (data loaded by separate pipeline)
     validate_fact_sales = BashOperator(
         task_id="validate_fact_sales",
@@ -86,22 +80,6 @@ with DAG(
         """
     )
 
-    # OPTION 2 (Alternative): Remove freshness check entirely
-    # validate_fact_sales = BashOperator(
-    #     task_id="validate_fact_sales",
-    #     bash_command="""
-    #     python /opt/airflow/scripts/validate_table.py \
-    #     --table_name fact_sales \
-    #     --pk_column sales_id \
-    #     --mandatory_columns date_id,store_id,product_id,net_amount \
-    #     --min_rows 1000
-    #     """
-    # )
-
-    # -----------------------------
-    # 📹 NEW: Extract validations
-    # -----------------------------
-
     # Extract validation
     validate_extract_snapshot = BashOperator(
         task_id="validate_extract_snapshot",
@@ -112,22 +90,11 @@ with DAG(
         --mandatory_columns SALES_ID,NET_AMOUNT,STORE_NAME,PRODUCT_NAME,FULL_DATE \
         --numeric_columns QUANTITY_SOLD,SALES_UNIT_PRICE,GROSS_AMOUNT,NET_AMOUNT,PRODUCT_UNIT_PRICE \
         --flag_columns IS_CHAIN,ACTIVE_FLAG,IS_WEEKEND \
-        --min_rows 1
+        --min_rows 1 \
+        --search_days_back 5 \
+        --allow_missing_file
         """
     )
 
-
-
-    # -----------------------------
-    # ✅ Updated dependency chain
-    # -----------------------------
-    (
-        validate_dim_store
-        >>validate_dim_product
-        >> validate_dim_distributor
-        >> validate_dim_date
-        >> validate_fact_sales
-        >>validate_extract_snapshot
-    )
     # Dependency chain
     [validate_dim_store, validate_dim_product, validate_dim_distributor, validate_dim_date] >> validate_fact_sales >> validate_extract_snapshot

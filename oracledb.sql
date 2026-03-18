@@ -189,7 +189,7 @@ INNER JOIN dim_date dt
     ON fs.date_id = dt.date_id;
 
 select count(*) from fact_sales;
-select * from dim_product;
+select * from dim_date;
 drop table fact_sales;
 drop table dim_product;
 

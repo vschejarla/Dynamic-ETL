@@ -13,7 +13,7 @@ ARCHIVE_DIR = os.path.join(BASE_PATH, "Archive")
 os.makedirs(CURRENT_DIR, exist_ok=True)
 os.makedirs(ARCHIVE_DIR, exist_ok=True)
 
-print("📂 Folders checked")
+print(" Folders checked")
 
 # Move existing files from Current → Archive
 for file in os.listdir(CURRENT_DIR):
@@ -58,7 +58,7 @@ with open(file_path, "w", newline="", encoding="utf-8") as f:
     writer.writerow([col[0] for col in cursor.description])
     writer.writerows(cursor.fetchall())
 
-print(f"✅ Data extracted to {file_name}")
+print(f" Data extracted to {file_name}")
 
 cursor.close()
 connection.close()
